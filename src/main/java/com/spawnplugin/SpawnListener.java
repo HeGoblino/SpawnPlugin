@@ -62,39 +62,20 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
-import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public class SpawnListener implements Listener {
 
     private final SpawnPlugin plugin;
     private final NamespacedKey NETHERITE_KB_KEY;
-
-    /*
-     * When CyberWorldReset kicks players to the lobby before a region reset, we save
-     * where they were standing so we can handle the return correctly:
-     *
-     *   - inside the reset area (512 blocks of spawn) → they come back to spawn + get protection
-     *   - outside the reset area → CWR would normally dump them at world spawn too, so we
-     *     override that and send them back to where they actually were
-     */
-    private final Map<UUID, Location> savedWorldLocation = new HashMap<>();
-    private final Map<UUID, Boolean>  wasInResetArea     = new HashMap<>();
-
-    // matches the 4 region files in the spawn_area reset group (r.-1.-1 / r.-1.0 / r.0.-1 / r.0.0)
-    // which together cover 512 blocks in each direction from 0,0
-    private static final double RESET_RADIUS = 512.0;
 
     public SpawnListener(SpawnPlugin plugin) {
         this.plugin = plugin;
@@ -169,56 +150,7 @@ public class SpawnListener implements Listener {
         event.quitMessage(null);
         UUID uuid = event.getPlayer().getUniqueId();
         plugin.getWarpManager().cancel(uuid);
-        savedWorldLocation.remove(uuid);
-        wasInResetArea.remove(uuid);
         Bukkit.getScheduler().runTask(plugin, () -> plugin.removeProtection(uuid));
-    }
-
-    // --- region reset return logic ---
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onLeaveMainWorld(PlayerTeleportEvent event) {
-        Location from = event.getFrom();
-        Location to   = event.getTo();
-        if (to == null) return;
-        if (from.getWorld().equals(to.getWorld())) return; // same-world teleport, skip
-
-        Location spawnLoc = plugin.getSpawnLocation();
-        if (spawnLoc == null) return;
-        if (!from.getWorld().equals(spawnLoc.getWorld())) return; // not leaving main world
-
-        UUID uuid = event.getPlayer().getUniqueId();
-        savedWorldLocation.put(uuid, from.clone());
-        boolean inReset = Math.abs(from.getX() - spawnLoc.getX()) <= RESET_RADIUS
-                       && Math.abs(from.getZ() - spawnLoc.getZ()) <= RESET_RADIUS;
-        wasInResetArea.put(uuid, inReset);
-    }
-
-    @EventHandler
-    public void onReturnToMainWorld(PlayerChangedWorldEvent event) {
-        Player player   = event.getPlayer();
-        Location spawnLoc = plugin.getSpawnLocation();
-        if (spawnLoc == null) return;
-        if (!player.getWorld().equals(spawnLoc.getWorld())) return; // didn't arrive in main world
-
-        UUID uuid = player.getUniqueId();
-        Boolean inReset  = wasInResetArea.remove(uuid);
-        Location savedLoc = savedWorldLocation.remove(uuid);
-        if (inReset == null || savedLoc == null) return;
-
-        if (inReset) {
-            // Was inside reset area — CyberWorldReset already sent them to spawn.
-            // Grant spawn protection so they land safely.
-            plugin.giveProtection(uuid);
-        } else {
-            // Was outside reset area — teleport back to their original location.
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (!player.isOnline()) return;
-                Location currentWorldLoc = savedLoc.clone();
-                currentWorldLoc.setWorld(player.getWorld());
-                player.teleport(currentWorldLoc);
-            }, 5L);
-        }
     }
 
     // --- movement ---
