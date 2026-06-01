@@ -1,0 +1,12 @@
+name: SpawnPlugin
+version: 1.0
+main: com.spawnplugin.SpawnPlugin
+description: Spawn management with protection and combat timer
+
+commands:
+  spawn:
+    description: Teleport to spawn, or manage spawn location (ops only).
+    usage: /spawn | /spawn set | /spawn cancel
+  random:
+    description: Teleport to a random location within 512 blocks of spawn (requires spawn protection, 24h cooldown).
+    usage: /random
