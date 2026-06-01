@@ -56,6 +56,7 @@ import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
@@ -83,14 +84,9 @@ public class SpawnListener implements Listener {
     private final SpawnPlugin plugin;
     private final NamespacedKey NETHERITE_KB_KEY;
 
-    /*
-     * When CyberWorldReset kicks players to the lobby before a region reset, we save
-     * where they were standing so we can handle the return correctly:
-     *
-     *   - inside the reset area (512 blocks of spawn) → they come back to spawn + get protection
-     *   - outside the reset area → CWR would normally dump them at world spawn too, so we
-     *     override that and send them back to where they actually were
-     */
+    // when CyberWorldReset kicks everyone before a reset, we track where they were
+    // so on return: inside 512 radius → bring them to spawn, outside → put them back where they were
+    // without this, everyone would pile back up at world spawn after the reset
     private final Map<UUID, Location> savedWorldLocation = new HashMap<>();
     private final Map<UUID, Boolean>  wasInResetArea     = new HashMap<>();
 
@@ -287,6 +283,12 @@ public class SpawnListener implements Listener {
             event.setCancelled(true);
             event.getPlayer().sendMessage(ChatColor.RED + "You cannot use spawn eggs within 80 blocks of spawn.");
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onHunger(FoodLevelChangeEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (plugin.hasProtection(player.getUniqueId())) event.setCancelled(true);
     }
 
     // --- velocity / push protection ---

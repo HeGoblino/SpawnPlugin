@@ -59,8 +59,8 @@ public class SpawnPlugin extends JavaPlugin {
         getCommand("random").setExecutor(new RandomCommand(this));
         getServer().getPluginManager().registerEvents(new SpawnListener(this), this);
 
-        // disable body collision server-wide — players clipping into each other near spawn
-        // causes all kinds of annoying griefing, just turn it off globally
+        // players clipping into each other near spawn was getting exploited for griefing
+        // turning collision off globally — SpawnListener also adds new players to the NoCollide scoreboard team
         for (org.bukkit.entity.Player p : getServer().getOnlinePlayers()) {
             p.setCollidable(false);
         }
