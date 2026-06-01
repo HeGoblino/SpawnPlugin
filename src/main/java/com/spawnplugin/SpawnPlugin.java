@@ -42,6 +42,7 @@ public class SpawnPlugin extends JavaPlugin {
     private File spawnFile;
     private File placedFile;
     private File cooldownFile;
+    private File protectionFile;
 
     @Override
     public void onEnable() {
@@ -50,8 +51,10 @@ public class SpawnPlugin extends JavaPlugin {
         spawnFile    = new File(getDataFolder(), "spawn.yml");
         placedFile   = new File(getDataFolder(), "placed_blocks.yml");
         cooldownFile = new File(getDataFolder(), "random_cooldowns.yml");
+        protectionFile = new File(getDataFolder(), "spawn_protected_players.yml");
 
         loadSpawn();
+        loadProtectedPlayers();
         loadPlacedBlocks();
         loadRandomCooldowns();
 
@@ -81,6 +84,7 @@ public class SpawnPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         saveSpawn();
+        saveProtectedPlayers();
         savePlacedBlocks();
         saveRandomCooldowns();
         getLogger().info("SpawnPlugin disabled.");
@@ -147,10 +151,44 @@ public class SpawnPlugin extends JavaPlugin {
     }
 
     public boolean hasProtection(UUID uuid)  { return protectedPlayers.contains(uuid); }
-    public void    giveProtection(UUID uuid) { protectedPlayers.add(uuid); }
-    public void    removeProtection(UUID uuid) { protectedPlayers.remove(uuid); }
+
+    public void giveProtection(UUID uuid) {
+        if (protectedPlayers.add(uuid)) {
+            saveProtectedPlayers();
+        }
+    }
+
+    public void removeProtection(UUID uuid) {
+        if (protectedPlayers.remove(uuid)) {
+            saveProtectedPlayers();
+        }
+    }
 
     public SpawnWarpManager getWarpManager() { return warpManager; }
+
+    private void loadProtectedPlayers() {
+        if (!protectionFile.exists()) return;
+        YamlConfiguration cfg = YamlConfiguration.loadConfiguration(protectionFile);
+        for (String entry : cfg.getStringList("protected")) {
+            try {
+                protectedPlayers.add(UUID.fromString(entry));
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private void saveProtectedPlayers() {
+        YamlConfiguration cfg = new YamlConfiguration();
+        ArrayList<String> entries = new ArrayList<>();
+        for (UUID uuid : protectedPlayers) {
+            entries.add(uuid.toString());
+        }
+        cfg.set("protected", entries);
+        try {
+            cfg.save(protectionFile);
+        } catch (Exception e) {
+            getLogger().warning("Failed to save spawn_protected_players.yml: " + e.getMessage());
+        }
+    }
 
     // --- player-placed block tracking ---
 

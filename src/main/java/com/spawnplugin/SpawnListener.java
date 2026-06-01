@@ -98,17 +98,6 @@ public class SpawnListener implements Listener {
                 plugin.giveProtection(player.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + "Welcome! You have spawn protection.");
             }
-        } else {
-            // Returning player — stay at logout position
-            // Give protection only if they logged out inside the spawn square
-            if (spawn != null) {
-                Location loc = player.getLocation();
-                boolean inSpawn = loc.getWorld().equals(spawn.getWorld())
-                        && inSpawnSquare(loc, spawn, SpawnPlugin.SPAWN_RADIUS);
-                if (inSpawn) {
-                    plugin.giveProtection(player.getUniqueId());
-                }
-            }
         }
     }
 
@@ -150,7 +139,6 @@ public class SpawnListener implements Listener {
         event.quitMessage(null);
         UUID uuid = event.getPlayer().getUniqueId();
         plugin.getWarpManager().cancel(uuid);
-        Bukkit.getScheduler().runTask(plugin, () -> plugin.removeProtection(uuid));
     }
 
     // --- movement ---
