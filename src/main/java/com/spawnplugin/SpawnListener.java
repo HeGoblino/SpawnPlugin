@@ -227,7 +227,10 @@ public class SpawnListener implements Listener {
         } else {
             // Was outside reset area — teleport back to their original location.
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline()) player.teleport(savedLoc);
+                if (!player.isOnline()) return;
+                Location currentWorldLoc = savedLoc.clone();
+                currentWorldLoc.setWorld(player.getWorld());
+                player.teleport(currentWorldLoc);
             }, 5L);
         }
     }

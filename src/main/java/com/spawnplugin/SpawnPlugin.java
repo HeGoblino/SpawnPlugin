@@ -1,15 +1,12 @@
 package com.spawnplugin;
 
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class SpawnPlugin extends JavaPlugin {
 
@@ -25,7 +22,12 @@ public class SpawnPlugin extends JavaPlugin {
     static final double PROTECTED_RADIUS = 45.0;   // edge of full protection
     static final int    TERRAIN_RADIUS   = 200;    // outer edge — beyond this we don't care
 
-    private Location spawnLocation;
+    private String spawnWorldName;
+    private double spawnX;
+    private double spawnY;
+    private double spawnZ;
+    private float spawnYaw;
+    private float spawnPitch;
 
     // players who currently have spawn protection (cleared when they leave the zone or attack)
     private final Set<UUID> protectedPlayers = new HashSet<>();
@@ -79,7 +81,7 @@ public class SpawnPlugin extends JavaPlugin {
             world.setWeatherDuration(Integer.MAX_VALUE);
         }
 
-        getLogger().info("SpawnPlugin enabled" + (spawnLocation != null ? " — spawn loaded." : " — no spawn set yet."));
+        getLogger().info("SpawnPlugin enabled" + (spawnWorldName != null ? " — spawn loaded." : " — no spawn set yet."));
     }
 
     @Override
@@ -97,18 +99,12 @@ public class SpawnPlugin extends JavaPlugin {
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(spawnFile);
         if (!cfg.contains("spawn.world")) return;
         try {
-            String worldName = cfg.getString("spawn.world");
-            org.bukkit.World world = getServer().getWorld(worldName);
-            if (world == null) {
-                getLogger().warning("Spawn world '" + worldName + "' not found — did it get renamed?");
-                return;
-            }
-            spawnLocation = new Location(world,
-                    cfg.getDouble("spawn.x"),
-                    cfg.getDouble("spawn.y"),
-                    cfg.getDouble("spawn.z"),
-                    (float) cfg.getDouble("spawn.yaw"),
-                    (float) cfg.getDouble("spawn.pitch"));
+            spawnWorldName = cfg.getString("spawn.world");
+            spawnX = cfg.getDouble("spawn.x");
+            spawnY = cfg.getDouble("spawn.y");
+            spawnZ = cfg.getDouble("spawn.z");
+            spawnYaw = (float) cfg.getDouble("spawn.yaw");
+            spawnPitch = (float) cfg.getDouble("spawn.pitch");
         } catch (Exception e) {
             getLogger().warning("Failed to load spawn: " + e.getMessage());
         }
@@ -116,13 +112,13 @@ public class SpawnPlugin extends JavaPlugin {
 
     private void saveSpawn() {
         YamlConfiguration cfg = new YamlConfiguration();
-        if (spawnLocation != null) {
-            cfg.set("spawn.world", spawnLocation.getWorld().getName());
-            cfg.set("spawn.x",     spawnLocation.getX());
-            cfg.set("spawn.y",     spawnLocation.getY());
-            cfg.set("spawn.z",     spawnLocation.getZ());
-            cfg.set("spawn.yaw",   (double) spawnLocation.getYaw());
-            cfg.set("spawn.pitch", (double) spawnLocation.getPitch());
+        if (spawnWorldName != null) {
+            cfg.set("spawn.world", spawnWorldName);
+            cfg.set("spawn.x",     spawnX);
+            cfg.set("spawn.y",     spawnY);
+            cfg.set("spawn.z",     spawnZ);
+            cfg.set("spawn.yaw",   (double) spawnYaw);
+            cfg.set("spawn.pitch", (double) spawnPitch);
         }
         try {
             cfg.save(spawnFile);
@@ -133,15 +129,26 @@ public class SpawnPlugin extends JavaPlugin {
 
     // --- public API ---
 
-    public Location getSpawnLocation() { return spawnLocation; }
+    public Location getSpawnLocation() {
+        if (spawnWorldName == null) return null;
+        World world = getServer().getWorld(spawnWorldName);
+        if (world == null) return null;
+        return new Location(world, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
+    }
 
     public void setSpawnLocation(Location loc) {
-        spawnLocation = loc.clone();
+        if (loc.getWorld() == null) return;
+        spawnWorldName = loc.getWorld().getName();
+        spawnX = loc.getX();
+        spawnY = loc.getY();
+        spawnZ = loc.getZ();
+        spawnYaw = loc.getYaw();
+        spawnPitch = loc.getPitch();
         saveSpawn();
     }
 
     public void clearSpawnLocation() {
-        spawnLocation = null;
+        spawnWorldName = null;
         saveSpawn();
     }
 
