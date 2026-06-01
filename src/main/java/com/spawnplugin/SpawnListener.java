@@ -8,8 +8,6 @@ import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
-import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.attribute.AttributeModifier;
@@ -65,34 +63,20 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
-import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public class SpawnListener implements Listener {
 
     private final SpawnPlugin plugin;
     private final NamespacedKey NETHERITE_KB_KEY;
-
-    // when CyberWorldReset kicks everyone before a reset, we track where they were
-    // so on return: inside 512 radius → bring them to spawn, outside → put them back where they were
-    // without this, everyone would pile back up at world spawn after the reset
-    private final Map<UUID, Location> savedWorldLocation = new HashMap<>();
-    private final Map<UUID, Boolean>  wasInResetArea     = new HashMap<>();
-
-    // matches the 4 region files in the spawn_area reset group (r.-1.-1 / r.-1.0 / r.0.-1 / r.0.0)
-    // which together cover 512 blocks in each direction from 0,0
-    private static final double RESET_RADIUS = 512.0;
 
     public SpawnListener(SpawnPlugin plugin) {
         this.plugin = plugin;
@@ -105,8 +89,6 @@ public class SpawnListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         event.joinMessage(null);
         Player player = event.getPlayer();
-        player.setCollidable(false);
-        addToNoCollideTeam(player);
         Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(player));
         Location spawn = plugin.getSpawnLocation();
 
@@ -116,17 +98,6 @@ public class SpawnListener implements Listener {
                 player.teleport(spawn);
                 plugin.giveProtection(player.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + "Welcome! You have spawn protection.");
-            }
-        } else {
-            // Returning player — stay at logout position
-            // Give protection only if they logged out inside the spawn square
-            if (spawn != null) {
-                Location loc = player.getLocation();
-                boolean inSpawn = loc.getWorld().equals(spawn.getWorld())
-                        && inSpawnSquare(loc, spawn, SpawnPlugin.SPAWN_RADIUS);
-                if (inSpawn) {
-                    plugin.giveProtection(player.getUniqueId());
-                }
             }
         }
     }
@@ -138,16 +109,6 @@ public class SpawnListener implements Listener {
     @EventHandler
     public void onArmorChange(PlayerArmorChangeEvent event) {
         Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(event.getPlayer()));
-    }
-
-    private void addToNoCollideTeam(Player player) {
-        Scoreboard sb = Bukkit.getScoreboardManager().getMainScoreboard();
-        Team team = sb.getTeam("NoCollide");
-        if (team == null) {
-            team = sb.registerNewTeam("NoCollide");
-            team.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
-        }
-        team.addEntry(player.getName());
     }
 
     private void applyNetheriteKBCancel(Player player) {
@@ -179,53 +140,6 @@ public class SpawnListener implements Listener {
         event.quitMessage(null);
         UUID uuid = event.getPlayer().getUniqueId();
         plugin.getWarpManager().cancel(uuid);
-        savedWorldLocation.remove(uuid);
-        wasInResetArea.remove(uuid);
-        Bukkit.getScheduler().runTask(plugin, () -> plugin.removeProtection(uuid));
-    }
-
-    // --- region reset return logic ---
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onLeaveMainWorld(PlayerTeleportEvent event) {
-        Location from = event.getFrom();
-        Location to   = event.getTo();
-        if (to == null) return;
-        if (from.getWorld().equals(to.getWorld())) return; // same-world teleport, skip
-
-        Location spawnLoc = plugin.getSpawnLocation();
-        if (spawnLoc == null) return;
-        if (!from.getWorld().equals(spawnLoc.getWorld())) return; // not leaving main world
-
-        UUID uuid = event.getPlayer().getUniqueId();
-        savedWorldLocation.put(uuid, from.clone());
-        boolean inReset = Math.abs(from.getX() - spawnLoc.getX()) <= RESET_RADIUS
-                       && Math.abs(from.getZ() - spawnLoc.getZ()) <= RESET_RADIUS;
-        wasInResetArea.put(uuid, inReset);
-    }
-
-    @EventHandler
-    public void onReturnToMainWorld(PlayerChangedWorldEvent event) {
-        Player player   = event.getPlayer();
-        Location spawnLoc = plugin.getSpawnLocation();
-        if (spawnLoc == null) return;
-        if (!player.getWorld().equals(spawnLoc.getWorld())) return; // didn't arrive in main world
-
-        UUID uuid = player.getUniqueId();
-        Boolean inReset  = wasInResetArea.remove(uuid);
-        Location savedLoc = savedWorldLocation.remove(uuid);
-        if (inReset == null || savedLoc == null) return;
-
-        if (inReset) {
-            // Was inside reset area — CyberWorldReset already sent them to spawn.
-            // Grant spawn protection so they land safely.
-            plugin.giveProtection(uuid);
-        } else {
-            // Was outside reset area — teleport back to their original location.
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline()) player.teleport(savedLoc);
-            }, 5L);
-        }
     }
 
     // --- movement ---
@@ -501,7 +415,6 @@ public class SpawnListener implements Listener {
         if (spawn == null) return;
         event.setRespawnLocation(spawn);
         plugin.giveProtection(event.getPlayer().getUniqueId());
-        event.getPlayer().setCollidable(false);
         Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(event.getPlayer()));
     }
 
