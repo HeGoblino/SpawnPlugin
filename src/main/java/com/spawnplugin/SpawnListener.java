@@ -8,8 +8,6 @@ import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
-import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.attribute.AttributeModifier;
@@ -109,8 +107,6 @@ public class SpawnListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         event.joinMessage(null);
         Player player = event.getPlayer();
-        player.setCollidable(false);
-        addToNoCollideTeam(player);
         Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(player));
         Location spawn = plugin.getSpawnLocation();
 
@@ -142,16 +138,6 @@ public class SpawnListener implements Listener {
     @EventHandler
     public void onArmorChange(PlayerArmorChangeEvent event) {
         Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(event.getPlayer()));
-    }
-
-    private void addToNoCollideTeam(Player player) {
-        Scoreboard sb = Bukkit.getScoreboardManager().getMainScoreboard();
-        Team team = sb.getTeam("NoCollide");
-        if (team == null) {
-            team = sb.registerNewTeam("NoCollide");
-            team.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
-        }
-        team.addEntry(player.getName());
     }
 
     private void applyNetheriteKBCancel(Player player) {
@@ -502,7 +488,6 @@ public class SpawnListener implements Listener {
         if (spawn == null) return;
         event.setRespawnLocation(spawn);
         plugin.giveProtection(event.getPlayer().getUniqueId());
-        event.getPlayer().setCollidable(false);
         Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(event.getPlayer()));
     }
 

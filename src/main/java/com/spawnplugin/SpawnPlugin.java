@@ -61,12 +61,6 @@ public class SpawnPlugin extends JavaPlugin {
         getCommand("random").setExecutor(new RandomCommand(this));
         getServer().getPluginManager().registerEvents(new SpawnListener(this), this);
 
-        // disable body collision server-wide — players clipping into each other near spawn
-        // causes all kinds of annoying griefing, just turn it off globally
-        for (org.bukkit.entity.Player p : getServer().getOnlinePlayers()) {
-            p.setCollidable(false);
-        }
-
         // make sure mooshrooms don't despawn between restarts
         for (org.bukkit.World world : getServer().getWorlds()) {
             for (org.bukkit.entity.MushroomCow mc : world.getEntitiesByClass(org.bukkit.entity.MushroomCow.class)) {
