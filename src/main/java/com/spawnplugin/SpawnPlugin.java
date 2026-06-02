@@ -1,6 +1,7 @@
 package com.spawnplugin;
 
 import org.bukkit.Location;
+import org.bukkit.entity.Player;
 import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -21,6 +22,7 @@ public class SpawnPlugin extends JavaPlugin {
     static final double SPAWN_RADIUS     = 45.5;   // edge of the pvp-free zone
     static final double PROTECTED_RADIUS = 45.0;   // edge of full protection
     static final int    TERRAIN_RADIUS   = 200;    // outer edge — beyond this we don't care
+    public static final int RETURN_TO_SPAWN_RADIUS = 512;
 
     private String spawnWorldName;
     private double spawnX;
@@ -151,6 +153,25 @@ public class SpawnPlugin extends JavaPlugin {
     }
 
     public boolean hasProtection(UUID uuid)  { return protectedPlayers.contains(uuid); }
+
+    public boolean isWithinSpawnReturnArea(String worldName, double x, double z) {
+        Location spawn = getSpawnLocation();
+        if (spawn == null || spawn.getWorld() == null) return false;
+        if (!spawn.getWorld().getName().equalsIgnoreCase(worldName)) return false;
+
+        return Math.abs(x - spawn.getX()) <= RETURN_TO_SPAWN_RADIUS
+                && Math.abs(z - spawn.getZ()) <= RETURN_TO_SPAWN_RADIUS;
+    }
+
+    public boolean sendToSpawn(Player player) {
+        Location spawn = getSpawnLocation();
+        if (spawn == null) return false;
+
+        player.teleport(spawn);
+        giveProtection(player.getUniqueId());
+        player.sendMessage(org.bukkit.ChatColor.GREEN + "Teleported to spawn. You have spawn protection!");
+        return true;
+    }
 
     public void giveProtection(UUID uuid) {
         if (protectedPlayers.add(uuid)) {
