@@ -2,71 +2,32 @@ package com.spawnplugin;
 
 import com.adminplugin.AdminPlugin;
 import com.adminplugin.StaffRank;
-import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
-import org.bukkit.Location;
-import org.bukkit.NamespacedKey;
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
-import org.bukkit.attribute.AttributeModifier;
+import org.bukkit.*;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Creeper;
-import org.bukkit.entity.Enderman;
-import org.bukkit.entity.HumanEntity;
-import org.bukkit.entity.Monster;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
-import org.bukkit.entity.WindCharge;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockExplodeEvent;
-import org.bukkit.event.block.BlockFertilizeEvent;
-import org.bukkit.event.block.BlockGrowEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.block.BlockSpreadEvent;
-import org.bukkit.World;
-import org.bukkit.event.world.ChunkLoadEvent;
-import org.bukkit.event.world.StructureGrowEvent;
-import org.bukkit.entity.MushroomCow;
-import org.bukkit.event.entity.CreatureSpawnEvent;
-import org.bukkit.event.entity.EntityChangeBlockEvent;
-import org.bukkit.event.entity.EntityExplodeEvent;
-import org.bukkit.event.entity.EntityPotionEffectEvent;
-import org.bukkit.enchantments.Enchantment;
+import org.bukkit.event.block.*;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.inventory.BrewEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
-import org.bukkit.event.player.PlayerFishEvent;
+import org.bukkit.event.player.*;
+import org.bukkit.event.weather.WeatherChangeEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.LootGenerateEvent;
-import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.BrewerInventory;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.potion.PotionType;
-import org.bukkit.Material;
-import org.bukkit.event.player.PlayerBucketEmptyEvent;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerItemConsumeEvent;
-import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerPortalEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.event.player.PlayerVelocityEvent;
-import org.bukkit.inventory.EquipmentSlot;
-import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
 import java.util.ArrayList;
@@ -77,11 +38,9 @@ import java.util.UUID;
 public class SpawnListener implements Listener {
 
     private final SpawnPlugin plugin;
-    private final NamespacedKey NETHERITE_KB_KEY;
 
     public SpawnListener(SpawnPlugin plugin) {
         this.plugin = plugin;
-        NETHERITE_KB_KEY = new NamespacedKey(plugin, "netherite_kb_cancel");
     }
 
     // --- join / quit ---
@@ -90,7 +49,6 @@ public class SpawnListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         event.joinMessage(null);
         Player player = event.getPlayer();
-        Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(player));
         Location spawn = plugin.getSpawnLocation();
 
         if (!player.hasPlayedBefore()) {
@@ -100,39 +58,6 @@ public class SpawnListener implements Listener {
                 plugin.giveProtection(player.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + "Welcome! You have spawn protection.");
             }
-        }
-    }
-
-    // --- netherite knockback resistance removal ---
-    // netherite armor gives 10% knockback resistance per piece by default — we strip that
-    // out and re-apply a negative modifier so it cancels itself. a bit hacky but it works.
-
-    @EventHandler
-    public void onArmorChange(PlayerArmorChangeEvent event) {
-        Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(event.getPlayer()));
-    }
-
-    private void applyNetheriteKBCancel(Player player) {
-        AttributeInstance attr = player.getAttribute(Attribute.KNOCKBACK_RESISTANCE);
-        if (attr == null) return;
-        attr.getModifiers().stream()
-                .filter(m -> NETHERITE_KB_KEY.equals(m.getKey()))
-                .forEach(attr::removeModifier);
-        int count = 0;
-        for (ItemStack piece : player.getInventory().getArmorContents()) {
-            if (piece != null) {
-                String name = piece.getType().name();
-                if (name.startsWith("NETHERITE_") && (name.endsWith("_HELMET")
-                        || name.endsWith("_CHESTPLATE")
-                        || name.endsWith("_LEGGINGS")
-                        || name.endsWith("_BOOTS"))) {
-                    count++;
-                }
-            }
-        }
-        if (count > 0) {
-            attr.addModifier(new AttributeModifier(NETHERITE_KB_KEY,
-                    -(count * 0.1), AttributeModifier.Operation.ADD_NUMBER));
         }
     }
 
@@ -175,10 +100,8 @@ public class SpawnListener implements Listener {
             boolean leftOverworldWorld = spawn != null
                     && !to.getWorld().equals(spawn.getWorld())
                     && to.getWorld().getEnvironment() != World.Environment.NETHER;
-            boolean leftNetherZone = to.getWorld().getEnvironment() == World.Environment.NETHER
-                    && !inNetherZone(to);
 
-            if (leftOverworldSpawn || leftOverworldWorld || leftNetherZone) {
+            if (leftOverworldSpawn || leftOverworldWorld) {
                 plugin.removeProtection(uuid);
                 player.sendMessage(ChatColor.RED + "" + ChatColor.BOLD + "You have left spawn protection.");
             }
@@ -361,7 +284,6 @@ public class SpawnListener implements Listener {
 
         // Allow non-natural reasons (eggs, breeding, taming, etc.)
         if (reason != CreatureSpawnEvent.SpawnReason.NATURAL
-                && reason != CreatureSpawnEvent.SpawnReason.CHUNK_GEN
                 && reason != CreatureSpawnEvent.SpawnReason.PATROL) return;
 
         Location spawn = plugin.getSpawnLocation();
@@ -445,7 +367,6 @@ public class SpawnListener implements Listener {
         if (spawn == null) return;
         event.setRespawnLocation(spawn);
         plugin.giveProtection(event.getPlayer().getUniqueId());
-        Bukkit.getScheduler().runTask(plugin, () -> applyNetheriteKBCancel(event.getPlayer()));
     }
 
     // --- weather --- keep it clear permanently
@@ -815,18 +736,9 @@ public class SpawnListener implements Listener {
         }
     }
 
-    // All nether portals send you to /netherspawn instead of the normal destination
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onNetherPortal(PlayerPortalEvent event) {
-        if (event.getCause() != PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) return;
-        Location dest = plugin.getNetherSpawnLocation();
-        if (dest == null) return; // no netherspawn set yet — let vanilla handle it
-        event.setTo(dest);
-    }
-
     // ── Nether spawn protection ───────────────────────────────────────────────
-    // Core (0-30 blocks):  full protection — no PvP, no mobs, no building, no damage.
-    // Outer (30-100 blocks): no building only.
+    // Core (0-8 blocks):  full protection — no PvP, no mobs, no building, no damage.
+    // Outer (8-100 blocks): no building only.
 
     private boolean inNetherCore(Location loc) {
         if (loc.getWorld().getEnvironment() != World.Environment.NETHER) return false;
@@ -873,30 +785,9 @@ public class SpawnListener implements Listener {
     // no natural mob spawns in core zone (0-30)
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onNetherMobSpawn(CreatureSpawnEvent event) {
-        if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL
-                && event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.CHUNK_GEN) return;
+        if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL) return;
         if (!inNetherCore(event.getLocation())) return;
         event.setCancelled(true);
-    }
-
-    // all damage blocked in core zone (0-30)
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onNetherCoreDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player player)) return;
-        if (event.getCause() == EntityDamageEvent.DamageCause.KILL) return;
-        if (!inNetherCore(player.getLocation())) return;
-        event.setCancelled(true);
-    }
-
-    // PvP blocked in core zone (0-30) — attacker in or out, if defender is in core
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onNetherCorePvP(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player defender)) return;
-        Player attacker = resolveAttacker(event);
-        if (attacker == null) return;
-        if (!inNetherCore(defender.getLocation())) return;
-        event.setCancelled(true);
-        attacker.sendMessage(ChatColor.YELLOW + "PvP is disabled in nether spawn.");
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -919,10 +810,9 @@ public class SpawnListener implements Listener {
             && Math.abs(loc.getZ() - spawn.getZ()) <= halfSide;
     }
 
-    /** Cube check (X, Y, and Z) — used for block break/place protection. */
+    /** Cube check (X, and Z) — used for block break/place protection. */
     private boolean inSpawnCube(Location loc, Location spawn, double halfSide) {
         return Math.abs(loc.getX() - spawn.getX()) <= halfSide
-            && Math.abs(loc.getY() - spawn.getY()) <= halfSide
             && Math.abs(loc.getZ() - spawn.getZ()) <= halfSide;
     }
 

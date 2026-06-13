@@ -2,7 +2,6 @@ package com.spawnplugin;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
-import org.bukkit.entity.Player;
 import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -18,7 +17,7 @@ public class SpawnPlugin extends JavaPlugin {
      *
      *   0 - 45 blocks  : full protection — no pvp, no mob spawns, no block changes
      *   45 - 80 blocks : no building allowed, pvp is fine
-     *   80 - 200 blocks: building is allowed but we track what players placed so
+     *   80 - 200 blocks: building is allowed, but we track what players placed so
      *                    explosions don't blow up terrain that wasn't theirs to begin with
      */
     static final double SPAWN_RADIUS     = 45.5;   // edge of the pvp-free zone
@@ -76,7 +75,6 @@ public class SpawnPlugin extends JavaPlugin {
         warpManager = new SpawnWarpManager(this);
 
         getCommand("spawn").setExecutor(new SpawnCommand(this));
-        getCommand("netherspawn").setExecutor(new NetherSpawnCommand(this));
         getCommand("random").setExecutor(new RandomCommand(this));
         getCommand("kill").setExecutor(new KillCommand(this));
         getServer().getPluginManager().registerEvents(new SpawnListener(this), this);
@@ -227,7 +225,7 @@ public class SpawnPlugin extends JavaPlugin {
     }
 
     /** Inner nether zone — full spawn protection (no PvP, no mobs, no building). */
-    public static final double NETHER_CORE_RADIUS = 30.0;
+    public static final double NETHER_CORE_RADIUS = 8;
     /** Outer nether zone — no building, but PvP is allowed. */
     public static final double NETHER_PROTECTED_RADIUS = 100.0;
 
