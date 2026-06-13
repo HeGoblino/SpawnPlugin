@@ -1,9 +1,11 @@
 package com.spawnplugin;
 
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -22,7 +24,7 @@ public class SpawnPlugin extends JavaPlugin {
     static final double SPAWN_RADIUS     = 45.5;   // edge of the pvp-free zone
     static final double PROTECTED_RADIUS = 45.0;   // edge of full protection
     static final int    TERRAIN_RADIUS   = 200;    // outer edge — beyond this we don't care
-    public static final int RETURN_TO_SPAWN_RADIUS = 512;
+    public static final int RETURN_TO_SPAWN_RADIUS = 512; // CyberWorldReset: players beyond this go to spawn instead of back
 
     private String spawnWorldName;
     private double spawnX;
@@ -30,6 +32,14 @@ public class SpawnPlugin extends JavaPlugin {
     private double spawnZ;
     private float spawnYaw;
     private float spawnPitch;
+
+    // nether spawn — stored separately, protected zone is always 100 blocks from 0,0 in any nether world
+    private String netherSpawnWorldName;
+    private double netherSpawnX;
+    private double netherSpawnY;
+    private double netherSpawnZ;
+    private float netherSpawnYaw;
+    private float netherSpawnPitch;
 
     // players who currently have spawn protection (cleared when they leave the zone or attack)
     private final Set<UUID> protectedPlayers = new HashSet<>();
@@ -42,6 +52,7 @@ public class SpawnPlugin extends JavaPlugin {
     private SpawnWarpManager warpManager;
 
     private File spawnFile;
+    private File netherSpawnFile;
     private File placedFile;
     private File cooldownFile;
     private File protectionFile;
@@ -50,12 +61,14 @@ public class SpawnPlugin extends JavaPlugin {
     public void onEnable() {
         getDataFolder().mkdirs();
 
-        spawnFile    = new File(getDataFolder(), "spawn.yml");
-        placedFile   = new File(getDataFolder(), "placed_blocks.yml");
-        cooldownFile = new File(getDataFolder(), "random_cooldowns.yml");
-        protectionFile = new File(getDataFolder(), "spawn_protected_players.yml");
+        spawnFile       = new File(getDataFolder(), "spawn.yml");
+        netherSpawnFile = new File(getDataFolder(), "netherspawn.yml");
+        placedFile      = new File(getDataFolder(), "placed_blocks.yml");
+        cooldownFile    = new File(getDataFolder(), "random_cooldowns.yml");
+        protectionFile  = new File(getDataFolder(), "spawn_protected_players.yml");
 
         loadSpawn();
+        loadNetherSpawn();
         loadProtectedPlayers();
         loadPlacedBlocks();
         loadRandomCooldowns();
@@ -63,7 +76,9 @@ public class SpawnPlugin extends JavaPlugin {
         warpManager = new SpawnWarpManager(this);
 
         getCommand("spawn").setExecutor(new SpawnCommand(this));
+        getCommand("netherspawn").setExecutor(new NetherSpawnCommand(this));
         getCommand("random").setExecutor(new RandomCommand(this));
+        getCommand("kill").setExecutor(new KillCommand(this));
         getServer().getPluginManager().registerEvents(new SpawnListener(this), this);
 
         // make sure mooshrooms don't despawn between restarts
@@ -86,6 +101,7 @@ public class SpawnPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         saveSpawn();
+        saveNetherSpawn();
         saveProtectedPlayers();
         savePlacedBlocks();
         saveRandomCooldowns();
@@ -152,26 +168,70 @@ public class SpawnPlugin extends JavaPlugin {
         saveSpawn();
     }
 
+    // --- nether spawn location ---
+
+    private void loadNetherSpawn() {
+        if (!netherSpawnFile.exists()) return;
+        YamlConfiguration cfg = YamlConfiguration.loadConfiguration(netherSpawnFile);
+        if (!cfg.contains("netherspawn.world")) return;
+        try {
+            netherSpawnWorldName = cfg.getString("netherspawn.world");
+            netherSpawnX     = cfg.getDouble("netherspawn.x");
+            netherSpawnY     = cfg.getDouble("netherspawn.y");
+            netherSpawnZ     = cfg.getDouble("netherspawn.z");
+            netherSpawnYaw   = (float) cfg.getDouble("netherspawn.yaw");
+            netherSpawnPitch = (float) cfg.getDouble("netherspawn.pitch");
+        } catch (Exception e) {
+            getLogger().warning("Failed to load netherspawn: " + e.getMessage());
+        }
+    }
+
+    private void saveNetherSpawn() {
+        YamlConfiguration cfg = new YamlConfiguration();
+        if (netherSpawnWorldName != null) {
+            cfg.set("netherspawn.world", netherSpawnWorldName);
+            cfg.set("netherspawn.x",     netherSpawnX);
+            cfg.set("netherspawn.y",     netherSpawnY);
+            cfg.set("netherspawn.z",     netherSpawnZ);
+            cfg.set("netherspawn.yaw",   (double) netherSpawnYaw);
+            cfg.set("netherspawn.pitch", (double) netherSpawnPitch);
+        }
+        try {
+            cfg.save(netherSpawnFile);
+        } catch (Exception e) {
+            getLogger().severe("Failed to save netherspawn.yml: " + e.getMessage());
+        }
+    }
+
+    public Location getNetherSpawnLocation() {
+        if (netherSpawnWorldName == null) return null;
+        World world = getServer().getWorld(netherSpawnWorldName);
+        if (world == null) return null;
+        return new Location(world, netherSpawnX, netherSpawnY, netherSpawnZ, netherSpawnYaw, netherSpawnPitch);
+    }
+
+    public void setNetherSpawnLocation(Location loc) {
+        if (loc.getWorld() == null) return;
+        netherSpawnWorldName = loc.getWorld().getName();
+        netherSpawnX     = loc.getX();
+        netherSpawnY     = loc.getY();
+        netherSpawnZ     = loc.getZ();
+        netherSpawnYaw   = loc.getYaw();
+        netherSpawnPitch = loc.getPitch();
+        saveNetherSpawn();
+    }
+
+    public void clearNetherSpawnLocation() {
+        netherSpawnWorldName = null;
+        saveNetherSpawn();
+    }
+
+    /** Inner nether zone — full spawn protection (no PvP, no mobs, no building). */
+    public static final double NETHER_CORE_RADIUS = 30.0;
+    /** Outer nether zone — no building, but PvP is allowed. */
+    public static final double NETHER_PROTECTED_RADIUS = 100.0;
+
     public boolean hasProtection(UUID uuid)  { return protectedPlayers.contains(uuid); }
-
-    public boolean isWithinSpawnReturnArea(String worldName, double x, double z) {
-        Location spawn = getSpawnLocation();
-        if (spawn == null || spawn.getWorld() == null) return false;
-        if (!spawn.getWorld().getName().equalsIgnoreCase(worldName)) return false;
-
-        return Math.abs(x - spawn.getX()) <= RETURN_TO_SPAWN_RADIUS
-                && Math.abs(z - spawn.getZ()) <= RETURN_TO_SPAWN_RADIUS;
-    }
-
-    public boolean sendToSpawn(Player player) {
-        Location spawn = getSpawnLocation();
-        if (spawn == null) return false;
-
-        player.teleport(spawn);
-        giveProtection(player.getUniqueId());
-        player.sendMessage(org.bukkit.ChatColor.GREEN + "Teleported to spawn. You have spawn protection!");
-        return true;
-    }
 
     public void giveProtection(UUID uuid) {
         if (protectedPlayers.add(uuid)) {
@@ -186,6 +246,25 @@ public class SpawnPlugin extends JavaPlugin {
     }
 
     public SpawnWarpManager getWarpManager() { return warpManager; }
+
+    // Called by CyberWorldReset before a region reset.
+    // Returns true if the player is within 512 blocks of spawn (can be teleported back after reset).
+    // Players outside this radius get sent to spawn instead.
+    public boolean isWithinSpawnReturnArea(String worldName, double x, double z) {
+        if (spawnWorldName == null || !spawnWorldName.equals(worldName)) return false;
+        return Math.abs(x - spawnX) <= RETURN_TO_SPAWN_RADIUS
+            && Math.abs(z - spawnZ) <= RETURN_TO_SPAWN_RADIUS;
+    }
+
+    // Called by CyberWorldReset to send a player to spawn (used for players outside RETURN_TO_SPAWN_RADIUS).
+    public boolean sendToSpawn(Player player) {
+        Location spawn = getSpawnLocation();
+        if (spawn == null) return false;
+        player.teleport(spawn);
+        giveProtection(player.getUniqueId());
+        player.sendMessage(ChatColor.GREEN + "You were teleported to spawn due to a world reset.");
+        return true;
+    }
 
     private void loadProtectedPlayers() {
         if (!protectionFile.exists()) return;

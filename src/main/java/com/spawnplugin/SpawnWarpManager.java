@@ -108,6 +108,7 @@ public class SpawnWarpManager {
      *   under 32 blocks    →  15s
      *
      * Creative/spectator players and teammates are ignored.
+     * Using distanceSquared throughout — avoids the sqrt call in a loop.
      */
     private int getWarpDelay(Player player) {
         double closestSq = Double.MAX_VALUE;

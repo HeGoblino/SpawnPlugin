@@ -28,6 +28,7 @@ import org.bukkit.event.block.BlockFertilizeEvent;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockSpreadEvent;
+import org.bukkit.World;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.entity.MushroomCow;
@@ -54,15 +55,15 @@ import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.event.weather.WeatherChangeEvent;
@@ -164,16 +165,50 @@ public class SpawnListener implements Listener {
             return;
         }
 
-        // Remove protection when player walks outside the spawn square
+        // Remove protection when player walks outside the spawn square (overworld)
+        // or outside the 100-block nether zone
         if (plugin.hasProtection(uuid)) {
             Location spawn = plugin.getSpawnLocation();
-            if (spawn == null) return;
-            boolean leftWorld  = !to.getWorld().equals(spawn.getWorld());
-            boolean leftSquare = !inSpawnSquare(to, spawn, SpawnPlugin.SPAWN_RADIUS);
-            if (leftWorld || leftSquare) {
+            boolean leftOverworldSpawn = spawn != null
+                    && to.getWorld().equals(spawn.getWorld())
+                    && !inSpawnSquare(to, spawn, SpawnPlugin.SPAWN_RADIUS);
+            boolean leftOverworldWorld = spawn != null
+                    && !to.getWorld().equals(spawn.getWorld())
+                    && to.getWorld().getEnvironment() != World.Environment.NETHER;
+            boolean leftNetherZone = to.getWorld().getEnvironment() == World.Environment.NETHER
+                    && !inNetherZone(to);
+
+            if (leftOverworldSpawn || leftOverworldWorld || leftNetherZone) {
                 plugin.removeProtection(uuid);
                 player.sendMessage(ChatColor.RED + "" + ChatColor.BOLD + "You have left spawn protection.");
             }
+        }
+    }
+
+    // Vanilla spawn-protection cancels PlayerInteractEvent for blocks near 0,0 —
+    // this runs at LOWEST so we can uncancel it for registered crate chests before
+    // CratePlugin's HIGH-priority handler processes the reward.
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onCrateUnblock(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        if (event.getHand() != EquipmentSlot.HAND) return;
+        if (!event.isCancelled()) return;
+        if (event.getClickedBlock() == null) return;
+        Material t = event.getClickedBlock().getType();
+        if (t != Material.CHEST && t != Material.TRAPPED_CHEST) return;
+        if (isCrateBlock(event.getClickedBlock().getLocation())) {
+            event.setCancelled(false);
+        }
+    }
+
+    private boolean isCrateBlock(Location loc) {
+        try {
+            org.bukkit.plugin.Plugin cp = Bukkit.getPluginManager().getPlugin("CratePlugin");
+            if (cp == null) return false;
+            Object cm = cp.getClass().getMethod("getCrateManager").invoke(cp);
+            return (boolean) cm.getClass().getMethod("isCrate", Location.class).invoke(cm, loc);
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -199,11 +234,6 @@ public class SpawnListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onHunger(FoodLevelChangeEvent event) {
-        if (!(event.getEntity() instanceof Player player)) return;
-        if (plugin.hasProtection(player.getUniqueId())) event.setCancelled(true);
-    }
 
     // --- velocity / push protection ---
 
@@ -785,6 +815,104 @@ public class SpawnListener implements Listener {
         }
     }
 
+    // All nether portals send you to /netherspawn instead of the normal destination
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherPortal(PlayerPortalEvent event) {
+        if (event.getCause() != PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) return;
+        Location dest = plugin.getNetherSpawnLocation();
+        if (dest == null) return; // no netherspawn set yet — let vanilla handle it
+        event.setTo(dest);
+    }
+
+    // ── Nether spawn protection ───────────────────────────────────────────────
+    // Core (0-30 blocks):  full protection — no PvP, no mobs, no building, no damage.
+    // Outer (30-100 blocks): no building only.
+
+    private boolean inNetherCore(Location loc) {
+        if (loc.getWorld().getEnvironment() != World.Environment.NETHER) return false;
+        return Math.abs(loc.getX()) <= SpawnPlugin.NETHER_CORE_RADIUS
+            && Math.abs(loc.getZ()) <= SpawnPlugin.NETHER_CORE_RADIUS;
+    }
+
+    private boolean inNetherZone(Location loc) {
+        if (loc.getWorld().getEnvironment() != World.Environment.NETHER) return false;
+        return Math.abs(loc.getX()) <= SpawnPlugin.NETHER_PROTECTED_RADIUS
+            && Math.abs(loc.getZ()) <= SpawnPlugin.NETHER_PROTECTED_RADIUS;
+    }
+
+    // no block break in either zone (0-100)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherBlockBreak(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE) return;
+        if (!inNetherZone(event.getBlock().getLocation())) return;
+        event.setCancelled(true);
+        player.sendMessage(ChatColor.RED + "You cannot break blocks in nether spawn.");
+    }
+
+    // no block place in either zone (0-100)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherBlockPlace(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE) return;
+        if (!inNetherZone(event.getBlock().getLocation())) return;
+        event.setCancelled(true);
+        player.sendMessage(ChatColor.RED + "You cannot place blocks in nether spawn.");
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherBucketEmpty(PlayerBucketEmptyEvent event) {
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE) return;
+        Block target = event.getBlockClicked().getRelative(event.getBlockFace());
+        if (!inNetherZone(target.getLocation())) return;
+        event.setCancelled(true);
+        player.sendMessage(ChatColor.RED + "You cannot place liquids in nether spawn.");
+    }
+
+    // no natural mob spawns in core zone (0-30)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherMobSpawn(CreatureSpawnEvent event) {
+        if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL
+                && event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.CHUNK_GEN) return;
+        if (!inNetherCore(event.getLocation())) return;
+        event.setCancelled(true);
+    }
+
+    // all damage blocked in core zone (0-30)
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onNetherCoreDamage(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (event.getCause() == EntityDamageEvent.DamageCause.KILL) return;
+        if (!inNetherCore(player.getLocation())) return;
+        event.setCancelled(true);
+    }
+
+    // PvP blocked in core zone (0-30) — attacker in or out, if defender is in core
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherCorePvP(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Player defender)) return;
+        Player attacker = resolveAttacker(event);
+        if (attacker == null) return;
+        if (!inNetherCore(defender.getLocation())) return;
+        event.setCancelled(true);
+        attacker.sendMessage(ChatColor.YELLOW + "PvP is disabled in nether spawn.");
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherEntityExplode(EntityExplodeEvent event) {
+        if (event.getLocation().getWorld().getEnvironment() != World.Environment.NETHER) return;
+        event.blockList().removeIf(b -> inNetherZone(b.getLocation()));
+        if (event.blockList().isEmpty() && inNetherCore(event.getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onNetherBlockExplode(BlockExplodeEvent event) {
+        if (event.getBlock().getWorld().getEnvironment() != World.Environment.NETHER) return;
+        event.blockList().removeIf(b -> inNetherZone(b.getLocation()));
+    }
+
+
     /** Square check (X and Z only) — used for movement/PvP protection boundary. */
     private boolean inSpawnSquare(Location loc, Location spawn, double halfSide) {
         return Math.abs(loc.getX() - spawn.getX()) <= halfSide
@@ -798,26 +926,6 @@ public class SpawnListener implements Listener {
             && Math.abs(loc.getZ() - spawn.getZ()) <= halfSide;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onCommand(PlayerCommandPreprocessEvent event) {
-        if (!event.getMessage().equalsIgnoreCase("/kill")) return;
-        Player player = event.getPlayer();
-        if (player.isOp() && player.getGameMode() != GameMode.SURVIVAL) return;
-        if (plugin.hasProtection(player.getUniqueId())) return;
-
-        // Different world than spawn — no restriction
-        Location spawn = plugin.getSpawnLocation();
-        if (spawn == null || !player.getWorld().equals(spawn.getWorld())) return;
-
-        // 512+ blocks from spawn on X or Z — allow
-        Location loc = player.getLocation();
-        double dx = Math.abs(loc.getX() - spawn.getX());
-        double dz = Math.abs(loc.getZ() - spawn.getZ());
-        if (Math.max(dx, dz) >= 80) return;
-
-        event.setCancelled(true);
-        player.sendMessage(ChatColor.RED + "You cannot use /kill near spawn without spawn protection.");
-    }
 
     private boolean isAdminOrOwner(Player player) {
         org.bukkit.plugin.Plugin ap = org.bukkit.Bukkit.getPluginManager().getPlugin("AdminPlugin");

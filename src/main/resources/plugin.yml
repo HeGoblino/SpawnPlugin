@@ -7,6 +7,12 @@ commands:
   spawn:
     description: Teleport to spawn, or manage spawn location (ops only).
     usage: /spawn | /spawn set | /spawn cancel
+  netherspawn:
+    description: Teleport to nether spawn, or manage nether spawn location (ops only).
+    usage: /netherspawn | /netherspawn set | /netherspawn cancel
   random:
     description: Teleport to a random location within 512 blocks of spawn (requires spawn protection, 24h cooldown).
     usage: /random
+  kill:
+    description: Kill yourself (blocked near spawn).
+    usage: /kill
